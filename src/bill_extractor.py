@@ -11,14 +11,43 @@ from groq import Groq
 
 reader = easyocr.Reader(['en'], gpu=False)
 
+import re
+import json
+
+def safe_extract_json(model_output: str):
+    # Extract JSON block between first '{' and last '}'
+    try:
+        json_block = model_output[model_output.find("{"): model_output.rfind("}") + 1]
+    except:
+        raise ValueError("No JSON object found in LLM response.")
+
+    # Remove markdown fences
+    json_block = json_block.replace("```json", "").replace("```", "").strip()
+
+    # Replace single quotes with double quotes (only if needed)
+    if "'" in json_block and '"' not in json_block:
+        json_block = json_block.replace("'", '"')
+
+    # Remove trailing commas
+    json_block = re.sub(r",\s*}", "}", json_block)
+    json_block = re.sub(r",\s*]", "]", json_block)
+
+    try:
+        return json.loads(json_block)
+    except json.JSONDecodeError as e:
+        print("---- RAW JSON BLOCK ----")
+        print(json_block)
+        raise e
+
 
 def extract_text_from_pdf(pdf_path: str):
     doc = fitz.open(pdf_path)
     all_text = []
 
     for page in doc:
-        pix = page.get_pixmap(dpi=220)
-        img_bytes = pix.tobytes("png")
+        pix = page.get_pixmap(dpi=350)
+        bw = fitz.Pixmap(pix, 0)  # enforce grayscale
+        img_bytes = bw.tobytes("png")
 
         # OCR
         result = reader.readtext(img_bytes, detail=1, paragraph=True)
@@ -34,26 +63,130 @@ def extract_text_from_pdf(pdf_path: str):
 
 def extract_fields_with_groq(text: str):
     client = Groq()
+    prompt = """
+You are an expert in cleaning noisy OCR from Indian cab receipts (Uber, Ola, Rapido).
+OCR has recurring predictable errors such as:
+- Currency "₹" becomes "3" or "2"
+- Amounts gain a leading "3" or "2" (e.g., 3123.02 → 123.02)
+- Curly braces { appear randomly
+- "3210" from Rapido means "₹210"
+- Extra characters appear around addresses or promotion text
+- Some fields appear on separate lines
+- Commas and spaces get corrupted
 
-    prompt = f"""
-Extract ride receipt fields from the OCR text.
+Always:
+1. Clean the OCR patterns based on examples below.
+2. Correct leading digits in amounts:
+   - If a money value begins with “3” or “2” AND the next digits form a valid amount → remove the first digit.
+3. Fix formatting issues: remove { } stray characters, merge split numbers.
+4. Extract fields even if labels are out of order or noisy.
+5. Auto-detect INR even when symbol is missing.
+6. Return ONLY valid JSON.
 
-Return ONLY JSON with this structure:
+=====================================================
+FEW-SHOT EXAMPLES
+=====================================================
 
-{{
-  "provider": null,
+### EXAMPLE 1 — Uber noisy OCR
+OCR INPUT:
+Total
+3123.02
+Suggested fare
+2126.82
+Subtotal
+{126.82
+Promotion
+33.80
+License Plate: KA4OB1670
+2.37 PM
+3.04 PM
+5, Nallurhalli, Whitefield
+XM2X+R4W, Marathahalli
+
+EXPECTED JSON OUTPUT:
+{
+  "provider": "Uber",
   "ride_id": null,
-  "date": null,
-  "time": null,
-  "total_amount": null,
-  "currency": null,
-  "pickup_address": null,
-  "dropoff_address": null,
-  "vehicle_number": null
-}}
+  "date": "2025-10-09",
+  "start_time": "2:37 PM",
+  "end_time": "3:04 PM",
+  "total_amount": "123.02",
+  "currency": "INR",
+  "pickup_address": "5, Nallurhalli, Whitefield, Bengaluru",
+  "dropoff_address": "XM2X+R4W, Marathahalli, Bengaluru",
+  "vehicle_number": "KA40B1670"
+}
 
-OCR Text:
----------------------
+### EXAMPLE 2 — Rapido OCR with merged number
+OCR INPUT:
+Selected Price 3210
+Booking History rapido Ashwini RD17506969273550314
+Driver name prasad
+Vehicle Number KA07B5736
+Jun 23rd 2025,10.17 PM
+Gate 1 Forum Shantiniketan Mall
+96 Tulsi Theater Rd Marathahalli
+
+EXPECTED JSON OUTPUT:
+{
+  "provider": "Rapido",
+  "ride_id": "RD17506969273550314",
+  "date": "2025-06-23",
+  "time": "10:17 PM",
+  "total_amount": "210",
+  "currency": "INR",
+  "pickup_address": "Gate 1, Forum Shantiniketan Mall, Whitefield, Bengaluru",
+  "dropoff_address": "96, Tulsi Theater Rd, Marathahalli, Bengaluru",
+  "vehicle_number": "KA07B5736"
+}
+
+### EXAMPLE 3 — Rapido OCR with distorted address + spaces
+OCR INPUT:
+Selected Price 3210
+rapido Ashwini
+Ride ID RD17506969273550314
+Vehicle Number KA07B5736
+Jun 23rd 2025, 7:30 PM
+SSC Block  Tesco HSC Whitefield 0 560066
+96 Tulsi Theater Rd Marathahalli 560037
+
+EXPECTED JSON OUTPUT:
+{
+  "provider": "Rapido",
+  "ride_id": "RD17506969273550314",
+  "date": "2025-06-23",
+  "time": "7:30 PM",
+  "total_amount": "210",
+  "currency": "INR",
+  "pickup_address": "SSC Block, Tesco HSC, Whitefield, Bengaluru 560066",
+  "dropoff_address": "96, Tulsi Theater Rd, Marathahalli, Bengaluru 560037",
+  "vehicle_number": "KA07B5736"
+}
+
+=====================================================
+You MUST ALWAYS return ONLY valid JSON. 
+No markdown. No explanation. No comments. No code. No placeholders. 
+If information is missing, return null. 
+If fields cannot be extracted, return null.
+
+VALID JSON SCHEMA:
+{
+  "provider": string or null,
+  "ride_id": string or null,
+  "date": string or null,
+  "start_time": string or null,
+  "end_time": string or null,
+  "time": string or null,
+  "total_amount": string or null,
+  "currency": "INR",
+  "pickup_address": string or null,
+  "dropoff_address": string or null,
+  "vehicle_number": string or null
+}
+
+NEVER return anything except one JSON object.
+
+Now extract fields for the following OCR text and return ONLY the JSON.
 {text}
 ---------------------
 """
@@ -67,9 +200,18 @@ OCR Text:
         temperature=0
     )
 
+    import re
+
     output = resp.choices[0].message.content
-    cleaned = output[output.find("{"):output.rfind("}") + 1]
-    return json.loads(cleaned)
+
+    # Extract strict JSON object
+    matches = re.findall(r"\{.*?\}", output, flags=re.DOTALL)
+    if not matches:
+        raise ValueError("No JSON found in model output")
+
+    json_str = matches[0]
+
+    return safe_extract_json(json_str)
 
 
 #############################################
