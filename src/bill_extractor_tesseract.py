@@ -3,46 +3,25 @@ import sys
 
 from groq import Groq
 
+from commons.llm_utils import LLMUtils
 from commons.utils import Utils
 
 ## Run command : python bill_extractor_tesseract.py D:/pycharm/admin_billdesk/resources/commute D:\pycharm\admin_billdesk\src\prompt\system_prompt_cab.txt
 ## export api key via PS :$env:GROQ_API_KEY="API_KEY"
 class Extractor:
-    path = sys.argv[1] #"D:/pycharm/admin_billdesk/resources/commute"
-    text = Utils.process_folder(path)
 
-    print(text)
+    path = sys.argv[1] #"D:/pycharm/admin_billdesk/resources/commute"
+    system_prompt_file_path = sys.argv[2]
+
+    receipts = Utils.process_folder(path)
+    print(receipts)
 
     client = Groq()
-    file_path = sys.argv[2]
 
-    try:
-        with open(file_path, 'r') as file:
-            system_prompt = file.read()
-        print("system_prompt loaded successfully:")
-        print(system_prompt)
-    except FileNotFoundError:
-        print(f"Error: The file '{file_path}' was not found.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    system_prompt = Utils.load_text_file(system_prompt_file_path)
+    user_prompt = f"""{receipts}"""
+    model = "llama-3.1-8b-instant"
 
-    user_prompt = f"""{text}"""
-
-    resp = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        temperature=0
-    )
-
-    output = resp.choices[0].message.content
-    print(output)
-    data = json.loads(output)
-
-    with open("rides.json", "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False)
-
-
-    print("data written to output.json")
+    output = LLMUtils.call_llm(client,model,system_prompt,user_prompt,0)
+    #print(output)
+    Utils.write_json_to_file(output, "rides.json")

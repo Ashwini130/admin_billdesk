@@ -1,3 +1,4 @@
+import json
 import os
 
 import cv2
@@ -53,3 +54,26 @@ class Utils:
                 results.append(result)
 
         return results
+
+    @staticmethod
+    def write_json_to_file(output, file_path):
+        data = json.loads(output)
+
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+
+        print("data written to output.json")
+
+    @staticmethod
+    def load_text_file(file_path):
+        try:
+            with open(file_path, 'r') as file:
+                file_txt = file.read()
+            print("file text loaded successfully:")
+            return file_txt
+        except FileNotFoundError:
+            print(f"Error: The file '{file_path}' was not found.")
+            return None
+        except Exception as e:
+            print(f"An error occurred: {e}")
+            return None
