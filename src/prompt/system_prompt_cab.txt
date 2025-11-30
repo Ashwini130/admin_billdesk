@@ -15,7 +15,18 @@ Rules:
 1. service_provider must be one of: "Ola", "Uber", "Rapido", "Other".
 2. If any field is missing or uncertain, return null.
 3. amount must be a clean numeric value (no currency symbols, no commas).
-4. date format must be: DD/MM/YYYY.
+4. Date MUST be normalized to the exact format: DD/MM/YYYY (two-digit day, two-digit month, four-digit year).
+   - Always add leading zero if day or month is a single digit.
+   - Always convert year to four digits (e.g., 25 → 2025, 2024 stays 2024).
+   - Accepted input formats include: "3 Jan 2025", "3 Jan, 2025", "3rd January 2024", "03/01/25", "Aug 5, 2025", etc.
+   - Convert ALL of them to strict DD/MM/YYYY.
+   - If date cannot be confidently identified, return null.
+   - Absolutely do NOT output formats like "10/9/25", "3-1-2025", "3/1/25", "2025-01-03", or any non-strict variant.
+   Examples:
+    - "3 Jan 2025" → "03/01/2025"
+    - "3rd January 2025" → "03/01/2025"
+    - "Aug 5, 2025" → "05/08/2025"
+    - "5/8/25" → "05/08/2025"
 5. time format must be: HH:mm:ss.  
    - If time is missing, extract from date if present; otherwise return null.
 6. Do NOT infer or guess fields not present in the text.

@@ -50,7 +50,7 @@ class FileUtils:
             if filename.lower().endswith(".pdf"):
                 pdf_path = os.path.join(folder_path, filename)
                 print(f"📄 Processing: {pdf_path}")
-                result = Utils.get_ocr_text_from_file(pdf_path)
+                result = FileUtils.get_ocr_text_from_file(pdf_path)
                 results.append(result)
 
         return results
