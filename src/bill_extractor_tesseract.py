@@ -5,7 +5,7 @@ from groq import Groq
 from commons.llm_utils import LLMUtils
 from commons.FileUtils import FileUtils
 
-## Run command : python bill_extractor_tesseract.py D:/pycharm/admin_billdesk/resources/commute D:\pycharm\admin_billdesk\src\prompt\system_prompt_cab.txt
+## Run command : python src/bill_extractor_tesseract.py D:/pycharm/admin_billdesk/resources/commute D:\pycharm\admin_billdesk\src\prompt\system_prompt_cab.txt
 ## export api key via PS :$env:GROQ_API_KEY="API_KEY"
 class Extractor:
 
@@ -19,8 +19,8 @@ class Extractor:
 
     system_prompt = FileUtils.load_text_file(system_prompt_file_path)
     user_prompt = f"""{receipts}"""
-    model = "llama-3.1-8b-instant"
+    model = "llama-3.3-70b-versatile"
 
     output = LLMUtils.call_llm(client,model,system_prompt,user_prompt,0)
-    #print(output)
+    print(output)
     FileUtils.write_json_to_file(output, "rides.json")

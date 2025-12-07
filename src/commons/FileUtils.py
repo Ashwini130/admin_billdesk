@@ -49,6 +49,8 @@ class FileUtils:
         for filename in os.listdir(folder_path):
             if filename.lower().endswith(".pdf"):
                 pdf_path = os.path.join(folder_path, filename)
+                pdf_name = os.path.splitext(filename)[0]
+                print(pdf_name)
                 print(f"📄 Processing: {pdf_path}")
                 result = FileUtils.get_ocr_text_from_file(pdf_path)
                 results.append(result)
