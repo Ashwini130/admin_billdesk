@@ -4,6 +4,7 @@ from pydantic import BaseModel, RootModel
 class RideExtraction(BaseModel):
     filename: str
     ride_id: Optional[str]
+    rider_name : Optional[str]
     date: Optional[str]
     time: Optional[str]
     pickup_address: Optional[str]

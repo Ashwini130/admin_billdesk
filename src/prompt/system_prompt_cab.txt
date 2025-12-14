@@ -6,8 +6,9 @@ Task:
 Extract the following fields for each receipt and return a single VALID JSON ARRAY of objects (no prose, no markdown, nothing else):
 
 Fields per object (exact keys and types):
-- file_name:  return as passed in the dictionary
+- filename:  return as passed in the dictionary
 - ride_id: string or null
+- rider_name : string or null
 - date: string in format "DD/MM/YYYY" or null
 - time: string in format "HH:mm:ss" (24h) or null
 - pickup_address: string or null
