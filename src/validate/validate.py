@@ -84,7 +84,7 @@ def validate():
 
         # 1. Filename check
         if filename not in attachment_map:
-            errors.append("❌ Filename not found in employee Attachments")
+            errors.append(" Filename not found in employee Attachments")
             ride["validation_result"] = "Invalid"
             ride["validation_error"] = errors
             continue
@@ -93,7 +93,7 @@ def validate():
 
         # 2. Date match (strict)
         if ride.get("date") != emp_info["attachment_date"]:
-            errors.append(f"❌ Date mismatch: Attachment={emp_info['attachment_date']} Ride={ride.get('date')}")
+            errors.append(f" Date mismatch: Attachment={emp_info['attachment_date']} Ride={ride.get('date')}")
 
         # 3. Pickup/Drop match (flexible: employee OR client address)
         pickup_score = partial_address_match(emp_info["employee_address"] + emp_info["client_address"], ride.get("pickup_address", ""), threshold=0.40)
@@ -102,7 +102,7 @@ def validate():
         ride["drop_match_score"] = drop_score
 
         if pickup_score < 0.40 or drop_score < 0.40:
-            errors.append(f"❌ Pickup/Drop mismatch: pickup_score={pickup_score:.2f}, drop_score={drop_score:.2f}")
+            errors.append(f" Pickup/Drop mismatch: pickup_score={pickup_score:.2f}, drop_score={drop_score:.2f}")
 
         # 4. Name match (fuzz + strict word)
         name_score = 0
@@ -111,7 +111,7 @@ def validate():
         ride["name_match_score"] = name_score
 
         if not (word_match(emp_info["emp_name"], ride.get("rider_name", "")) or name_score >= 75):
-            errors.append(f"❌ Rider name mismatch: Rider='{ride.get('rider_name', '')}' Emp='{emp_info['emp_name']}' Score={name_score}")
+            errors.append(f" Rider name mismatch: Rider='{ride.get('rider_name', '')}' Emp='{emp_info['emp_name']}' Score={name_score}")
 
         # Set results
         if errors:
