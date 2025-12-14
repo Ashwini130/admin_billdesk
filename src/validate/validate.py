@@ -1,129 +1,130 @@
-# validators/commute_validator.py
-
-from dataclasses import dataclass
-from typing import List, Dict, Optional
+import json
+import re
+from pathlib import Path
+from typing import List, Optional
 
 from thefuzz import fuzz
-from sentence_transformers import SentenceTransformer, util
-import numpy as np
 
+try:
+    from sentence_transformers import SentenceTransformer, util
+    MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+except ImportError:
+    MODEL = None
+    print("⚠ sentence-transformers not installed. Address similarity will use token overlap only.")
 
-# ---------------------------------------------------
-# Setup global embedding model (fast & lightweight)
-# ---------------------------------------------------
+# ----------------------------
+# Utilities
+# ----------------------------
+def load_json(path):
+    with open(path, 'r', encoding='utf-8') as f:
+        return json.load(f)
 
-MODEL = SentenceTransformer("sentence-transformers/all-MiniLM-L6-v2")
+def save_json(path, data):
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
 
+def word_match(emp_name: str, rider_name: str) -> bool:
+    emp_words = emp_name.strip().split()
+    rider_words = rider_name.strip().split()
+    return any(ew.lower() == rw.lower() for ew in emp_words for rw in rider_words)
 
-# ---------------------------------------------------
-# Data structures
-# ---------------------------------------------------
+def normalize_address(addr: str) -> List[str]:
+    return re.findall(r"[a-zA-Z0-9]+", addr.lower())
 
-@dataclass
-class EmployeeData:
-    emp_name: str
-    bill_date: str
-    employee_address: str
-    client_addresses: List[str]
-
-
-@dataclass
-class ReceiptData:
-    filename: str
-    rider_name: Optional[str]
-    date: Optional[str]
-    time: Optional[str]
-    pickup_address: Optional[str]
-    drop_address: Optional[str]
-    amount: Optional[float]
-    distance_km: Optional[float]
-    service_provider: Optional[str]
-    ocr: Optional[str]
-
-
-# ---------------------------------------------------
-# Utility functions
-# ---------------------------------------------------
-
-def _embed(text: str):
-    """Helper to convert string to embedding."""
-    return MODEL.encode(text, convert_to_tensor=True)
-
-
-def address_similarity(addr1: str, addr2: str) -> float:
-    """Cosine similarity between two addresses."""
+def token_overlap_similarity(addr1: str, addr2: str) -> float:
+    """Simple token overlap score between two addresses."""
     if not addr1 or not addr2:
         return 0.0
+    tokens1 = set(normalize_address(addr1))
+    tokens2 = set(normalize_address(addr2))
+    if not tokens1 or not tokens2:
+        return 0.0
+    matches = len(tokens1 & tokens2)
+    return matches / len(tokens1)  # ratio of addr1 tokens present in addr2
 
-    emb1 = _embed(addr1)
-    emb2 = _embed(addr2)
-    return float(util.cos_sim(emb1, emb2))
+def address_similarity(addr1: str, addr2: str) -> float:
+    """Semantic similarity if model available, fall back to token overlap."""
+    if not addr1 or not addr2:
+        return 0.0
+    if MODEL:
+        emb1 = MODEL.encode(addr1, convert_to_tensor=True)
+        emb2 = MODEL.encode(addr2, convert_to_tensor=True)
+        return float(util.cos_sim(emb1, emb2))
+    else:
+        return token_overlap_similarity(addr1, addr2)
 
+def partial_address_match(address_list: List[str], ride_addr: str, threshold: float = 0.40) -> float:
+    """Returns best similarity score, matching ride address to any in address_list."""
+    if not ride_addr:
+        return 0.0
+    scores = [address_similarity(ride_addr, ref) for ref in address_list]
+    return max(scores) if scores else 0.0
 
-# ---------------------------------------------------
-# Main Validation Logic
-# ---------------------------------------------------
+# ----------------------------
+# Validation Logic
+# ----------------------------
+def validate():
+    employee_data = load_json(Path(__file__).parent / "employee.json")
+    rides_data = load_json(Path(__file__).parent / "rides.json")
 
-class CommuteValidator:
+    # Build filename -> employee meta mapping
+    attachment_map = {}
+    for emp_code, emp_info in employee_data.items():
+        for attachment in emp_info.get("Attachments", []):
+            attachment_map[attachment['filename']] = {
+                "emp_name": emp_info.get("emp_name", ""),
+                "attachment_date": attachment['date'],
+                "employee_address": emp_info.get("employee_address", []),
+                "client_address": emp_info.get("client_addresses", [])
+            }
 
-    NAME_THRESHOLD = 75       # 75% fuzzy match
-    ADDRESS_THRESHOLD = 0.40  # 0.40 cosine similarity
+    for ride in rides_data:
+        filename = ride.get("filename")
+        errors = []
 
-    @staticmethod
-    def validate(receipt: ReceiptData, employee: EmployeeData) -> Dict:
-        """
-        Apply validation rules:
-        - Name fuzz match >= 75
-        - Date match exact
-        - Pickup/drop must match employee_address OR any client_address
-          with similarity >= 0.40
-        """
+        # 1. Filename check
+        if filename not in attachment_map:
+            errors.append("❌ Filename not found in employee Attachments")
+            ride["validation_result"] = "Invalid"
+            ride["validation_error"] = errors
+            continue
 
-        results = {
-            "filename": receipt.filename,
-            "name_match": False,
-            "date_match": False,
-            "pickup_match": False,
-            "drop_match": False,
-            "pickup_match_score": 0.0,
-            "drop_match_score": 0.0,
-            "name_match_score": 0
-        }
+        emp_info = attachment_map[filename]
 
-        # -------------------------
-        # 1. Name Validation
-        # -------------------------
-        if receipt.rider_name:
-            score = fuzz.token_set_ratio(receipt.rider_name, employee.emp_name)
-            results["name_match_score"] = score
-            if score >= CommuteValidator.NAME_THRESHOLD:
-                results["name_match"] = True
+        # 2. Date match (strict)
+        if ride.get("date") != emp_info["attachment_date"]:
+            errors.append(f"❌ Date mismatch: Attachment={emp_info['attachment_date']} Ride={ride.get('date')}")
 
-        # -------------------------
-        # 2. Date Validation
-        # -------------------------
-        if receipt.date == employee.bill_date:
-            results["date_match"] = True
+        # 3. Pickup/Drop match (flexible: employee OR client address)
+        pickup_score = partial_address_match(emp_info["employee_address"] + emp_info["client_address"], ride.get("pickup_address", ""), threshold=0.40)
+        drop_score = partial_address_match(emp_info["employee_address"] + emp_info["client_address"], ride.get("drop_address", ""), threshold=0.40)
+        ride["pickup_match_score"] = pickup_score
+        ride["drop_match_score"] = drop_score
 
-        # -------------------------
-        # 3. Address Validation
-        # -------------------------
-        all_addr = [employee.employee_address] + employee.client_addresses
+        if pickup_score < 0.40 or drop_score < 0.40:
+            errors.append(f"❌ Pickup/Drop mismatch: pickup_score={pickup_score:.2f}, drop_score={drop_score:.2f}")
 
-        # Pickup
-        if receipt.pickup_address:
-            scores = [address_similarity(receipt.pickup_address, a) for a in all_addr]
-            best = max(scores) if scores else 0
-            results["pickup_match_score"] = best
-            if best >= CommuteValidator.ADDRESS_THRESHOLD:
-                results["pickup_match"] = True
+        # 4. Name match (fuzz + strict word)
+        name_score = 0
+        if ride.get("rider_name"):
+            name_score = fuzz.token_set_ratio(ride["rider_name"], emp_info["emp_name"])
+        ride["name_match_score"] = name_score
 
-        # Drop
-        if receipt.drop_address:
-            scores = [address_similarity(receipt.drop_address, a) for a in all_addr]
-            best = max(scores) if scores else 0
-            results["drop_match_score"] = best
-            if best >= CommuteValidator.ADDRESS_THRESHOLD:
-                results["drop_match"] = True
+        if not (word_match(emp_info["emp_name"], ride.get("rider_name", "")) or name_score >= 75):
+            errors.append(f"❌ Rider name mismatch: Rider='{ride.get('rider_name', '')}' Emp='{emp_info['emp_name']}' Score={name_score}")
 
-        return results
+        # Set results
+        if errors:
+            ride["validation_result"] = "Invalid"
+            ride["validation_error"] = errors
+        else:
+            ride["validation_result"] = "Valid"
+            ride["validation_error"] = []
+
+    # Save validated rides
+    output_path = Path(__file__).parent / "rides_validated.json"
+    save_json(output_path, rides_data)
+    print(f"✅ Validation complete. Output written to {output_path}")
+
+if __name__ == "__main__":
+    validate()
