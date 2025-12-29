@@ -29,7 +29,7 @@ if __name__ == "__main__":
         print("❌ No bills found in ridesIIIPL output files.")
         sys.exit(1)
 
-    bills = bills[:2]
+    #bills = bills[:2]
     # Separate valid and invalid bills based on 'validation' key
     valid_bills = [b for b in bills if b.get("validation").get("is_valid")]
     invalid_bills = [b for b in bills if not b.get("validation").get("is_valid")]
