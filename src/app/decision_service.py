@@ -7,7 +7,7 @@ from groq import Groq
 
 if __name__ == "__main__":
     # Collect all ride outputs from output folder matching ridesIIIPL*
-    rides_folder = "src/output"
+    rides_folder = "D:/pycharm/admin_billdesk/src/output"
     bills = []
     for fname in os.listdir(rides_folder):
         if fname.startswith("ridesIIIPL") and os.path.isfile(os.path.join(rides_folder, fname)):
@@ -22,7 +22,7 @@ if __name__ == "__main__":
 
     # Load policy JSON from output
     policy = FileUtils.load_json_from_file(
-        "src/output/policy.json"
+        "D:/pycharm/admin_billdesk/src/output/policy.json"
     )
 
     if not bills:
@@ -61,7 +61,7 @@ if __name__ == "__main__":
 
     # Load and update the system prompt
     system_prompt = FileUtils.load_text_file(
-        "src/prompt/system_prompt_decision.txt"
+        "D:/pycharm/admin_billdesk/src/prompt/system_prompt_decision.txt"
     )
     system_prompt += (
         "\n\nNote: Monthly total for this employee in this category has been pre-calculated "
