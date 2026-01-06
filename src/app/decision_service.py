@@ -7,7 +7,7 @@ from groq import Groq
 
 if __name__ == "__main__":
     # Collect all ride outputs from output folder matching ridesIIIPL*
-    rides_folder = "/admin_billdesk/src/output"
+    rides_folder = "src/output"
     bills_map = {}  # key: "emp_id_emp_name", value: list of bills
     bills = []
     for fname in os.listdir(rides_folder):
@@ -33,7 +33,7 @@ if __name__ == "__main__":
 
     # Load policy JSON from output
     policy = FileUtils.load_json_from_file(
-        "/admin_billdesk/src/output/policy.json"
+        "src/output/policy.json"
     )
 
     if not bills:
