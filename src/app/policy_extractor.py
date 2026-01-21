@@ -10,9 +10,10 @@ from commons.constants import Constants as Co
 
 
 class PolicyExtractor:
-    def __init__(self, input_pdf_path, system_prompt_path):
+    def __init__(self,root_folder, input_pdf_path, system_prompt_path):
         self.input_pdf_path = input_pdf_path
         self.system_prompt_path = system_prompt_path
+        self.root_folder=root_folder
 
     def run(self):
         # Step 1: Extract text from the PDF using existing OCR helper
@@ -29,8 +30,10 @@ class PolicyExtractor:
             ("human", "{ocr_text}")
         ])
 
+        model_name=config[Co.LLM][Co.MODEL]
+
         llm = ChatGroq(
-            model=config[Co.LLM][Co.MODEL],
+            model=model_name,
             temperature=config[Co.LLM][Co.TEMPERATURE]
         )
 
@@ -44,13 +47,14 @@ class PolicyExtractor:
         })
 
         # Step 4: Save the JSON output using existing helper
-        FileUtils.write_json_to_file(output, "D:/pycharm/admin_billdesk/src/output/policy.json")
+        FileUtils.write_json_to_file(output, self.root_folder+"src/model_output/"+model_name+"/policy/policy.json")
 
         print(f"✅ Policy JSON written to policy.json from: {self.input_pdf_path}")
 
 
 if __name__ == "__main__":
-    pdf_path = "D:/pycharm/admin_billdesk/resources/policy/company_policy.pdf"
-    system_prompt_file_path = "D:/pycharm/admin_billdesk/src/prompt/system_prompt_policy.txt"
-    extractor = PolicyExtractor(pdf_path, system_prompt_file_path)
+    root_folder=""
+    pdf_path = root_folder+"resources/policy/company_policy.pdf"
+    system_prompt_file_path = root_folder+"src/prompt/system_prompt_policy.txt"
+    extractor = PolicyExtractor(root_folder,pdf_path, system_prompt_file_path)
     extractor.run()
