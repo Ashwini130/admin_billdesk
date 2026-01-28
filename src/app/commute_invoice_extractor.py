@@ -36,7 +36,6 @@ class CommuteExtractor:
         # Load system prompt
         self.system_prompt = FileUtils.load_text_file(system_prompt_path)
         print("\n[Loaded System Prompt]")
-        print(self.system_prompt)
 
         # Choose model
         self.llm = ChatGroq(
